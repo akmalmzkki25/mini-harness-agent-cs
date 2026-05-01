@@ -4,6 +4,7 @@ from typing import Any, Optional
 
 from app.modules.gemini_embeddings import embed_documents
 from app.modules.typesense_common import ensure_ok, request_typesense
+from app.utils.logger import get_logger
 
 
 class FaqObatSearchTool:
@@ -12,6 +13,7 @@ class FaqObatSearchTool:
     DEFAULT_QUERY_BY_WEIGHTS = "6,5,4,1,1"
     DEFAULT_EXCLUDE_FIELDS = "vector"
     DEFAULT_TEXT_MATCH_TYPE = "max_weight"
+    logger = get_logger(__name__)
 
     async def keyword_search(
         self,
@@ -20,6 +22,7 @@ class FaqObatSearchTool:
         query_by: Optional[str] = None,
         per_page: int = 5,
     ) -> dict[str, Any]:
+        self.logger.debug("FAQ keyword search query=%s per_page=%s", query, per_page)
         response = await request_typesense(
             "GET",
             f"/collections/{self.COLLECTION_NAME}/documents/search",
@@ -30,6 +33,7 @@ class FaqObatSearchTool:
             ),
         )
         await ensure_ok(response, {200})
+        self.logger.info("FAQ keyword search completed hits=%s", len((response.json_data or {}).get("hits", [])))
         return response.json_data or {}
 
     async def vector_search(
@@ -38,6 +42,7 @@ class FaqObatSearchTool:
         *,
         per_page: int = 5,
     ) -> dict[str, Any]:
+        self.logger.debug("FAQ vector search query=%s per_page=%s", query, per_page)
         query_vector = await embed_documents([{"text": query, "title": "faq_query"}])
         vector_query = self._build_vector_query(query_vector[0], per_page)
 
@@ -51,6 +56,7 @@ class FaqObatSearchTool:
             ),
         )
         await ensure_ok(response, {200})
+        self.logger.info("FAQ vector search completed hits=%s", len((response.json_data or {}).get("hits", [])))
         return response.json_data or {}
 
     async def hybrid_search(
@@ -60,6 +66,7 @@ class FaqObatSearchTool:
         per_page: int = 5,
         alpha: float = 0.7,
     ) -> dict[str, Any]:
+        self.logger.debug("FAQ hybrid search query=%s per_page=%s alpha=%s", query, per_page, alpha)
         query_vector = await embed_documents([{"text": query, "title": "faq_query"}])
         vector_query = self._build_vector_query(query_vector[0], per_page)
 
@@ -74,6 +81,7 @@ class FaqObatSearchTool:
             ),
         )
         await ensure_ok(response, {200})
+        self.logger.info("FAQ hybrid search completed hits=%s", len((response.json_data or {}).get("hits", [])))
         return response.json_data or {}
 
     def _build_search_payload(

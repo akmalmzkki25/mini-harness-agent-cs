@@ -9,10 +9,12 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from app.modules.typesense_common import ensure_ok, get_typesense_config, request_typesense
+from app.utils.logger import get_logger
 
 
 FAQ_COLLECTION = "faq_obat"
 PRODUCT_COLLECTION = "data_produk"
+logger = get_logger(__name__)
 
 
 def build_faq_schema(vector_dim: int) -> dict[str, Any]:
@@ -51,6 +53,7 @@ def build_product_schema(vector_dim: int) -> dict[str, Any]:
 
 
 async def collection_exists(name: str) -> bool:
+    logger.debug("Checking Typesense collection existence name=%s", name)
     response = await request_typesense("GET", f"/collections/{name}")
     if response.status_code == 404:
         return False
@@ -61,8 +64,10 @@ async def collection_exists(name: str) -> bool:
 async def recreate_collection(schema: dict[str, Any]) -> None:
     name = schema["name"]
     if await collection_exists(name):
+        logger.info("Deleting existing Typesense collection name=%s", name)
         await ensure_ok(await request_typesense("DELETE", f"/collections/{name}"), {200})
 
+    logger.info("Creating Typesense collection name=%s", name)
     await ensure_ok(
         await request_typesense("POST", "/collections", json_body=schema),
         {201},
@@ -71,6 +76,7 @@ async def recreate_collection(schema: dict[str, Any]) -> None:
 
 async def init_typesense_collections() -> None:
     config = get_typesense_config()
+    logger.info("Initializing Typesense collections with vector_dim=%s", config["vector_dim"])
     await recreate_collection(build_faq_schema(config["vector_dim"]))
     await recreate_collection(build_product_schema(config["vector_dim"]))
 

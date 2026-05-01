@@ -17,10 +17,15 @@ from app.modules.typesense_common import (
     load_json_file,
     request_typesense,
 )
+from app.utils.logger import get_logger
+
+
+logger = get_logger(__name__)
 
 
 async def build_faq_documents() -> list[dict[str, Any]]:
     raw_documents = await load_json_file("faq_obat.json")
+    logger.info("Building FAQ documents count=%s", len(raw_documents))
     documents: list[dict[str, Any]] = []
     embedding_inputs: list[dict[str, Any]] = []
 
@@ -47,6 +52,7 @@ async def build_faq_documents() -> list[dict[str, Any]]:
 
 async def build_product_documents() -> list[dict[str, Any]]:
     raw_documents = await load_json_file("data_produk.json")
+    logger.info("Building product documents count=%s", len(raw_documents))
     documents: list[dict[str, Any]] = []
     embedding_inputs: list[dict[str, Any]] = []
 
@@ -87,6 +93,7 @@ async def build_product_documents() -> list[dict[str, Any]]:
 
 
 async def import_documents(collection_name: str, documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    logger.info("Importing documents into Typesense collection=%s count=%s", collection_name, len(documents))
     payload = "\n".join(json.dumps(document, ensure_ascii=False) for document in documents)
     response = await request_typesense(
         "POST",
@@ -95,18 +102,22 @@ async def import_documents(collection_name: str, documents: list[dict[str, Any]]
         data=payload,
     )
     await ensure_ok(response, {200})
+    logger.info("Typesense import completed collection=%s", collection_name)
     return [json.loads(line) for line in response.text.splitlines() if line.strip()]
 
 
 async def index_all_typesense_data() -> dict[str, list[dict[str, Any]]]:
+    logger.info("Starting full Typesense data indexing")
     faq_documents = await build_faq_documents()
     product_documents = await build_product_documents()
     faq_result = await import_documents(FAQ_COLLECTION, faq_documents)
     product_result = await import_documents(PRODUCT_COLLECTION, product_documents)
-    return {
+    result = {
         FAQ_COLLECTION: faq_result,
         PRODUCT_COLLECTION: product_result,
     }
+    logger.info("Completed full Typesense data indexing")
+    return result
 
 
 if __name__ == "__main__":

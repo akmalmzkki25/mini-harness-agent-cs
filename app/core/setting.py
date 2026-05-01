@@ -97,6 +97,33 @@ class Setting:
             "WHATSAPP_APP_SECRET",
             "YOUR_WHATSAPP_APP_SECRET_HERE",
         )
+        self.WHATSAPP_GRAPH_API_VERSION = self._get_str(
+            env_values,
+            "WHATSAPP_GRAPH_API_VERSION",
+            "v20.0",
+        )
+        self.WHATSAPP_GRAPH_API_BASE_URL = self._get_str(
+            env_values,
+            "WHATSAPP_GRAPH_API_BASE_URL",
+            "https://graph.facebook.com",
+        )
+
+        self.GEMINI_CHAT_MODEL = self._get_str(
+            env_values,
+            "GEMINI_CHAT_MODEL",
+            "models/gemini-3-flash-preview",
+        )
+        self.AGENT_MAX_RAW_MESSAGES = self._get_int(env_values, "AGENT_MAX_RAW_MESSAGES", 10)
+        self.AGENT_HANDOFF_TIMEOUT_SECONDS = self._get_int(
+            env_values,
+            "AGENT_HANDOFF_TIMEOUT_SECONDS",
+            900,
+        )
+        self.AGENT_SCHEDULER_INTERVAL_SECONDS = self._get_int(
+            env_values,
+            "AGENT_SCHEDULER_INTERVAL_SECONDS",
+            30,
+        )
 
     @staticmethod
     def _get_str(env_values: dict[str, str], key: str, default: str) -> str:

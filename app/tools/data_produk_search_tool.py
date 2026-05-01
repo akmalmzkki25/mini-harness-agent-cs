@@ -4,6 +4,7 @@ from typing import Any, Optional
 
 from app.modules.gemini_embeddings import embed_documents
 from app.modules.typesense_common import ensure_ok, request_typesense
+from app.utils.logger import get_logger
 
 
 class DataProdukSearchTool:
@@ -12,6 +13,7 @@ class DataProdukSearchTool:
     DEFAULT_QUERY_BY_WEIGHTS = "8,7,6,5,4,3,2,5,1,1"
     DEFAULT_EXCLUDE_FIELDS = "vector"
     DEFAULT_TEXT_MATCH_TYPE = "max_weight"
+    logger = get_logger(__name__)
 
     async def keyword_search(
         self,
@@ -20,6 +22,7 @@ class DataProdukSearchTool:
         query_by: Optional[str] = None,
         per_page: int = 1,
     ) -> dict[str, Any]:
+        self.logger.debug("Product keyword search query=%s per_page=%s", query, per_page)
         response = await request_typesense(
             "GET",
             f"/collections/{self.COLLECTION_NAME}/documents/search",
@@ -30,6 +33,7 @@ class DataProdukSearchTool:
             ),
         )
         await ensure_ok(response, {200})
+        self.logger.info("Product keyword search completed hits=%s", len((response.json_data or {}).get("hits", [])))
         return response.json_data or {}
 
     async def vector_search(
@@ -38,6 +42,7 @@ class DataProdukSearchTool:
         *,
         per_page: int = 1,
     ) -> dict[str, Any]:
+        self.logger.debug("Product vector search query=%s per_page=%s", query, per_page)
         query_vector = await embed_documents([{"text": query, "title": "produk_query"}])
         vector_query = self._build_vector_query(query_vector[0], per_page)
 
@@ -51,6 +56,7 @@ class DataProdukSearchTool:
             ),
         )
         await ensure_ok(response, {200})
+        self.logger.info("Product vector search completed hits=%s", len((response.json_data or {}).get("hits", [])))
         return response.json_data or {}
 
     async def hybrid_search(
@@ -60,6 +66,7 @@ class DataProdukSearchTool:
         per_page: int = 1,
         alpha: float = 0.7,
     ) -> dict[str, Any]:
+        self.logger.debug("Product hybrid search query=%s per_page=%s alpha=%s", query, per_page, alpha)
         query_vector = await embed_documents([{"text": query, "title": "produk_query"}])
         vector_query = self._build_vector_query(query_vector[0], per_page)
 
@@ -74,6 +81,7 @@ class DataProdukSearchTool:
             ),
         )
         await ensure_ok(response, {200})
+        self.logger.info("Product hybrid search completed hits=%s", len((response.json_data or {}).get("hits", [])))
         return response.json_data or {}
 
     def _build_search_payload(

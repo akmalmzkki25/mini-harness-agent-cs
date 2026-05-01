@@ -7,10 +7,12 @@ from typing import Any
 import httpx
 
 from app.core.setting import setting
+from app.utils.logger import get_logger
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "app" / "data"
+logger = get_logger(__name__)
 
 
 class SimpleResponse:
@@ -63,6 +65,7 @@ async def request_typesense(
     url = f"{config['uri']}{path}"
 
     try:
+        logger.debug("Typesense request started method=%s path=%s", method.upper(), path)
         async with httpx.AsyncClient(timeout=config["timeout"]) as client:
             if path.endswith("/documents/search"):
                 search_params = params or json_body or {}
@@ -71,6 +74,7 @@ async def request_typesense(
 
                 if force_body:
                     collection_name = path.strip("/").split("/")[1]
+                    logger.info("Using Typesense multi_search fallback for collection=%s", collection_name)
                     payload = {
                         "searches": [
                             {
@@ -87,6 +91,7 @@ async def request_typesense(
                     if response.is_success:
                         multi_data = response.json()
                         if isinstance(multi_data, dict) and multi_data.get("results"):
+                            logger.debug("Typesense multi_search succeeded for collection=%s", collection_name)
                             return _json_response(multi_data["results"][0], response.status_code)
                     return SimpleResponse(response.status_code, response.text)
 
@@ -99,9 +104,12 @@ async def request_typesense(
                 content=data,
             )
             if "application/json" in response.headers.get("content-type", ""):
+                logger.debug("Typesense request completed with JSON response status=%s", response.status_code)
                 return _json_response(response.json(), response.status_code)
+            logger.debug("Typesense request completed with text response status=%s", response.status_code)
             return SimpleResponse(response.status_code, response.text)
     except httpx.HTTPError as error:
+        logger.exception("Typesense request failed method=%s path=%s", method.upper(), path)
         return SimpleResponse(status_code=500, text=json.dumps({"message": str(error)}))
 
 
@@ -115,4 +123,5 @@ async def ensure_ok(response: SimpleResponse, expected_statuses: set[int]) -> Si
 
 async def load_json_file(filename: str) -> list[dict[str, Any]]:
     path = DATA_DIR / filename
+    logger.debug("Loading JSON file from %s", path)
     return json.loads(path.read_text(encoding="utf-8"))
