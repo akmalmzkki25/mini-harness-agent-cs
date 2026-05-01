@@ -1,0 +1,65 @@
+[
+    {
+        "nama_produk": "CARB BLOCKER",
+        "function": "Menghambat penyerapan karbohidrat dari makanan.",
+        "description": "Carb Blocker adalah suplemen inovatif yang dirancang khusus untuk membantu Anda menghambat penyerapan karbohidrat dari asupan makanan. Hal ini berfungsi untuk mengurangi terjadinya lonjakan gula darah yang terlalu cepat sehingga mengurangi terjadinya penimbunan lemak berlebih di badan.",
+        "caution_side_effect": "Dapat menyebabkan: Mual, Rasa tidak nyaman pada perut, Peningkatan frekuensi BAB",
+        "aturan_pakai": "Diminum di tengah-tengah waktu makan atau sebelum makan.",
+        "objective": "yang suka makan nasi dan tepung (karbohidrat)",
+        "pricing": "- 15 capsule : Rp. 400.000 - 30 capsule : Rp. 800.000 - 60 capsule : Rp. 1.600.000"
+    },
+    {
+        "nama_produk": "FAT BLOCKER",
+        "function": "Menghambat penyerapan lemak dari makanan.",
+        "description": "Fat Blocker adalah solusi pendukung diet yang diformulasikan untuk membantu Anda mengontrol asupan lemak dari makanan sehari-hari. Fungsi utama dari Fat Blocker adalah menghambat penyerapan lemak dari makanan. Lemak yang tidak terserap ini kemudian akan dikeluarkan secara alami dari tubuh melalui proses pembuangan.",
+        "caution_side_effect": "Dapat menyebabkan: BAB berminyak, Sulit menahan BAB. Hindari penggunaannya bila Anda memiliki masalah batu empedu.",
+        "aturan_pakai": "Diminum di tengah-tengah waktu makan atau sebelum makan. Bila Anda mengkonsumsi vitamin A / D / E / K, jeda minimal 1 jam dari Fat Blocker.",
+        "objective": "untuk yang suka makan berlemak, seperti minyak, padangan.",
+        "pricing": "- 15 capsule : Rp. 400.000 - 30 capsule : Rp. 800.000 - 60 capsule : Rp. 1.400.000"
+    },
+    {
+        "nama_produk": "FAT BURNER",
+        "function": "Membantu pembakaran lemak saat berolahraga.",
+        "description": "Fat Burner adalah obat peningkat metabolisme yang dirancang khusus untuk memaksimalkan pembakaran lemak saat berolahraga. Produk ini bekerja sebagai booster energi yang membantu tubuh menggunakan cadangan lemak sebagai sumber energi utama, sehingga pembakaran lemak menjadi semakin banyak.",
+        "caution_side_effect": "Dapat menyebabkan: Keringat berlebih, Dehidrasi (disarankan untuk banyak minum). Hindari penggunaan bila Anda memiliki masalah pada jantung / hipertiroid / hamil / menyusui.",
+        "aturan_pakai": "Diminum 30 menit sebelum berolahraga.",
+        "objective": "untuk yang suka olahraga, anak gym, pilattes",
+        "pricing": "- 15 capsule : Rp. 450.000 - 30 capsule : Rp. 900.000 - 60 capsule : Rp. 1.600.000"
+    },
+    {
+        "nama_produk": "APPETITE SUPPRESSANT",
+        "function": "Mengurangi rasa lapar dan membantu kontrol porsi makan. (mengontrol nafsu makan secara umum)",
+        "description": "Appetite Suppressant adalah obat pendukung diet yang dirancang khusus untuk membantu Anda mengurangi rasa lapar yang sulit dikendalikan.Bekerja dengan cara mengirimkan sinyal kenyang ke tubuh dan menyeimbangkan hormon yang mengatur nafsu makan. Dengan mengonsumsi suplemen ini, Anda akan merasa lebih mudah untuk berhenti makan sebelum kekenyangan dan menghindari keinginan untuk makan berlebih (overeating) atau mengemil secara emosional.",
+        "caution_side_effect": "Dapat menyebabkan: Berdebar, Sakit kepala / pusing, Insomnia. Hindari penggunaan bila Anda memiliki masalah pada jantung / hipertiroid / hamil / menyusui.",
+        "aturan_pakai": "Diminum 30 menit sebelum makan.",
+        "objective": "untuk yang suka nyemil",
+        "pricing": "- 15 capsule : Rp. 375.000 - 30 capsule : Rp. 750.000 - 60 capsule : Rp. 1.200.000"
+    },
+    {
+        "nama_produk": "APPETITE SUPPRESSANT PLUS",
+        "function": "Mengurangi rasa lapar dan membantu kontrol porsi makan. (mengontrol nafsu makan di pusat otak)",
+        "description": "Appetite Suppressant Plus adalah varian lanjutan yang dirancang untuk memberikan kontrol nafsu makan tingkat lanjut.Berbeda dengan varian standar, produk ini bekerja langsung dengan mengontrol nafsu makan di pusat otak (hipotalamus). Dengan menyeimbangkan neurotransmiter yang mengatur sinyal lapar dan kenyang, suplemen ini membantu mematikan keinginan untuk makan berlebih (overeating) dan memberikan rasa kenyang yang lebih dalam dan tahan lama.",
+        "caution_side_effect": "Dapat menyebabkan: Berdebar, Sakit kepala / pusing, Insomnia. Hindari penggunaan bila Anda memiliki masalah pada jantung / hipertiroid / hamil / menyusui / glaukoma.",
+        "aturan_pakai": "Diminum 30 menit sebelum makan.",
+        "objective": "untuk yang suka nyemil",
+        "pricing": "- 15 capsule : Rp. 500.000 - 30 capsule : Rp. 1.000.000 - 60 capsule : Rp. 2.000.000"
+    },
+    {
+        "nama_produk": "SUGAR SUPPRESSANT",
+        "function": "Mengurangi craving terhadap rasa manis.",
+        "description": "Sugar Suppressant adalah solusi tepat bagi Anda yang ingin mengontrol asupan gula berlebih dan menjaga pola makan sehat. Suplemen ini bekerja dengan cara menyeimbangkan respon reseptor perasa dan sistem saraf yang memicu keinginan mengonsumsi gula. Dengan berkurangnya craving terhadap gula, Anda akan merasa lebih mudah untuk mengontrol nafsu makan, menghindari camilan tidak sehat, dan menjaga stabilitas kadar gula darah harian.",
+        "caution_side_effect": "Dapat menyebabkan: Mengantuk, Kesemutan pada tangan atau kaki. Hindari penggunaan bila Anda memiliki glaukoma / riwayat batu ginjal / hamil.",
+        "aturan_pakai": "Diminum saat perut kosong.",
+        "objective": "untuk sweet tooth, yang suka manis manis berlebih",
+        "pricing": "- 15 capsule : Rp. 450.000 - 30 capsule : Rp. 900.000 - 60 capsule : Rp. 1.600.000"
+    },
+    {
+        "nama_produk": "Suntikan GLP-1",
+        "function": "Mengurangi rasa lapar dan membantu kontrol porsi makan.",
+        "description": "GLP-1 (Glucagon-like peptide-1) adalah hormon alami yang diproduksi di usus setelah makan untuk mengatur gula darah dan nafsu makan. Obat agonis reseptor GLP-1 berfungsi dengan cara  memperlambat pengosongan lambung dan memberi sinyal kenyang.",
+        "caution_side_effect": "*CONSULT DOKTER",
+        "aturan_pakai": "*CONSULT DOKTER",
+        "objective": "*CONSULT DOKTER",
+        "pricing": "Start from Rp. 375.000 *dosis akan ditentukan saat konsultasi"
+    }
+]
