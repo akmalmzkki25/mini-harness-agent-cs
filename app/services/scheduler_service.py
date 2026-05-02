@@ -68,8 +68,14 @@ class AgentSchedulerService:
                     metadata={"scheduler": "handoff_timeout_fallback"},
                 )
                 await memory.add_message(conversation.id, ChatMessage(role="assistant", content=text))
-                await whatsapp_service.send_text(to=contact.wa_id, text=text)
-                logger.info("Fallback reply sent for expired handoff conversation_id=%s", conversation.id)
+                if setting.USE_WEBSITE and not setting.USE_WHATSAPP_WEBHOOK:
+                    logger.info(
+                        "Fallback reply stored for website test mode conversation_id=%s",
+                        conversation.id,
+                    )
+                else:
+                    await whatsapp_service.send_text(to=contact.wa_id, text=text)
+                    logger.info("Fallback reply sent for expired handoff conversation_id=%s", conversation.id)
             await session.commit()
             await redis.aclose()
 

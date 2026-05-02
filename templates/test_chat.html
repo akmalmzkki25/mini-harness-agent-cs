@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CS WhatsApp Web Simulator</title>
+  <style>
+    :root {
+      --bg: #f3f5f7;
+      --panel: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --line: #d1d5db;
+      --user: #dbeafe;
+      --agent: #dcfce7;
+      --button: #0f766e;
+      --button-text: #ffffff;
+    }
+    body { margin: 0; font-family: "Segoe UI", Tahoma, sans-serif; background: var(--bg); color: var(--text); }
+    .wrap { max-width: 960px; margin: 20px auto; padding: 16px; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    label { font-size: 13px; color: var(--muted); }
+    input, textarea, button { border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+    input, textarea { padding: 10px; background: #fff; }
+    textarea { min-height: 90px; resize: vertical; }
+    button { background: var(--button); color: var(--button-text); padding: 10px 14px; cursor: pointer; }
+    .chatbox { height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: #fff; }
+    .msg { margin-bottom: 10px; padding: 10px; border-radius: 10px; border: 1px solid var(--line); white-space: pre-wrap; }
+    .user { background: var(--user); }
+    .assistant, .human { background: var(--agent); }
+    .meta { font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+    .badge { display: inline-block; margin-left: 6px; padding: 2px 6px; border-radius: 999px; font-size: 11px; background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+    .status { margin-top: 8px; font-size: 13px; color: var(--muted); }
+    @media (max-width: 768px) { .row { grid-template-columns: 1fr; } .chatbox { height: 360px; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h2 style="margin-top: 0;">CS WhatsApp Web Simulator</h2>
+      <div class="row">
+        <div class="field">
+          <label>WA ID (dummy)</label>
+          <input id="wa_id" value="6281234567890" />
+        </div>
+        <div class="field">
+          <label>Display Name</label>
+          <input id="display_name" value="Test User Web" />
+        </div>
+      </div>
+      <div class="field" style="margin-bottom: 10px;">
+        <label>Dummy Auth Token</label>
+        <input id="token" value="{{ dummy_token }}" />
+      </div>
+      <div class="chatbox" id="chatbox"></div>
+      <div class="field" style="margin-top: 10px;">
+        <label>Message</label>
+        <textarea id="message" placeholder="Tulis pesan customer di sini..."></textarea>
+      </div>
+      <div style="display: flex; gap: 10px; margin-top: 10px;">
+        <button id="refreshBtn" type="button">Refresh Chat</button>
+        <button id="sendBtn" type="button">Kirim ke Agent</button>
+      </div>
+      <div class="status" id="status">Ready.</div>
+    </div>
+  </div>
+
+  <script>
+    const chatbox = document.getElementById("chatbox");
+    const statusEl = document.getElementById("status");
+    const waIdEl = document.getElementById("wa_id");
+    const displayNameEl = document.getElementById("display_name");
+    const tokenEl = document.getElementById("token");
+    const messageEl = document.getElementById("message");
+    const sendBtn = document.getElementById("sendBtn");
+    const refreshBtn = document.getElementById("refreshBtn");
+
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    function esc(text) {
+      return String(text).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[c]));
+    }
+
+    async function loadMessages() {
+      const waId = waIdEl.value.trim();
+      if (!waId) return;
+      setStatus("Loading messages...");
+      const res = await fetch(`/test-chat/messages?wa_id=${encodeURIComponent(waId)}`);
+      const data = await res.json();
+      chatbox.innerHTML = "";
+      for (const msg of data.messages || []) {
+        const cls = msg.role === "user" ? "user" : (msg.role === "human" ? "human" : "assistant");
+        const fallbackBadge = msg.is_fallback_timeout
+          ? `<span class="badge">fallback timeout</span>`
+          : "";
+        chatbox.innerHTML += `
+          <div class="msg ${cls}">
+            <div class="meta">${esc(msg.role)}${fallbackBadge} - ${esc(msg.created_at || "-")}</div>
+            <div>${esc(msg.content)}</div>
+          </div>
+        `;
+      }
+      chatbox.scrollTop = chatbox.scrollHeight;
+      setStatus(`Loaded ${(data.messages || []).length} messages.`);
+    }
+
+    async function sendMessage() {
+      const wa_id = waIdEl.value.trim();
+      const display_name = displayNameEl.value.trim();
+      const text = messageEl.value.trim();
+      const token = tokenEl.value.trim();
+      if (!wa_id || !text || !token) {
+        setStatus("WA ID, token, dan message wajib diisi.");
+        return;
+      }
+      setStatus("Sending...");
+      sendBtn.disabled = true;
+      try {
+        const res = await fetch("/test-chat/send", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Dummy-Auth": token
+          },
+          body: JSON.stringify({ wa_id, display_name, text })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setStatus(`Error: ${data.detail || "request failed"}`);
+          return;
+        }
+        messageEl.value = "";
+        await loadMessages();
+        setStatus(`Sent. action=${data.action}, stage=${data.stage}, confidence=${data.confidence}`);
+      } catch (err) {
+        setStatus(`Error: ${err}`);
+      } finally {
+        sendBtn.disabled = false;
+      }
+    }
+
+    sendBtn.addEventListener("click", sendMessage);
+    refreshBtn.addEventListener("click", loadMessages);
+    messageEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) sendMessage();
+    });
+    loadMessages();
+  </script>
+</body>
+</html>

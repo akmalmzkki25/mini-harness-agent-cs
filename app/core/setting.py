@@ -22,11 +22,14 @@ class Setting(BaseSettings):
     WHATSAPP_APP_SECRET: str = "YOUR_WHATSAPP_APP_SECRET_HERE"
     WHATSAPP_GRAPH_API_VERSION: str = "v20.0"
     WHATSAPP_GRAPH_API_BASE_URL: str = "https://graph.facebook.com"
+    USE_WHATSAPP_WEBHOOK: bool = False
+    USE_WEBSITE: bool = True
+    WEBSITE_DUMMY_AUTH_TOKEN: str = "dev-token"
 
     GEMINI_CHAT_MODEL: str = "models/gemini-3-flash-preview"
     AGENT_MAX_RAW_MESSAGES: int = 10
-    AGENT_HANDOFF_TIMEOUT_SECONDS: int = 900
-    AGENT_SCHEDULER_INTERVAL_SECONDS: int = 30
+    AGENT_HANDOFF_TIMEOUT_SECONDS: int = 300
+    AGENT_SCHEDULER_INTERVAL_SECONDS: int = 45
 
     model_config = SettingsConfigDict(
         env_file=".env",
