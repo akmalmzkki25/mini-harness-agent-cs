@@ -31,3 +31,6 @@ class AgentTurnResult(BaseModel):
     decision: AgentDecision
     used_tools: list[str] = Field(default_factory=list)
     knowledge_context: dict[str, Any] = Field(default_factory=dict)
+
+class SummaryOutput(BaseModel):
+    summary: str

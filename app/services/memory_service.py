@@ -7,12 +7,8 @@ from redis.asyncio import Redis
 
 from app.core.setting import setting
 from app.modules.gemini_chat import generate_structured
-from app.schemas.agent import ChatMessage
+from app.schemas.agent import ChatMessage, SummaryOutput
 from app.utils.logger import get_logger
-
-
-class SummaryOutput(BaseModel):
-    summary: str
 
 
 logger = get_logger(__name__)
@@ -54,7 +50,7 @@ class MemoryService:
             'Kembalikan JSON dengan key "summary".'
         )
         try:
-            result = await generate_structured(prompt, SummaryOutput)
+            result: SummaryOutput = await generate_structured(prompt, SummaryOutput)
             summary = result.summary
             logger.debug("Memory summarization succeeded conversation_id=%s", conversation_id)
         except Exception:
