@@ -32,5 +32,16 @@ class AgentTurnResult(BaseModel):
     used_tools: list[str] = Field(default_factory=list)
     knowledge_context: dict[str, Any] = Field(default_factory=dict)
 
+
+class PaymentEvidenceAssessment(BaseModel):
+    is_payment_confirmation: bool = False
+    scheme: Literal["pembelian_produk", "booking_konsultasi", "umum"] = "umum"
+    has_image: bool = False
+    image_relevance: Literal["valid", "unclear", "invalid", "missing"] = "missing"
+    summary: str = ""
+    checks_required: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
 class SummaryOutput(BaseModel):
     summary: str

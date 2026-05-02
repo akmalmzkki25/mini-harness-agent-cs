@@ -171,6 +171,7 @@ Menjelaskan bahwa project ini punya dua mode operasi berbeda.
 - `WhatsApp webhook mode`
 - `Website simulator mode`
 - kapan masing-masing dipakai
+- keduanya sekarang mendukung inbound `text` dan `image`
 
 **Pesan Penting**
 
@@ -186,7 +187,7 @@ Menjelaskan bahwa project ini punya dua mode operasi berbeda.
 
 | Aspek | Webhook Mode | Website Mode |
 |---|---|---|
-| Entry channel | Meta WhatsApp webhook | HTML simulator |
+| Entry channel | Meta WhatsApp webhook (text/image) | HTML simulator (text/image) |
 | Outbound | WhatsApp Cloud API | JSON + transcript UI |
 | Auth | Verify token + API token | Dummy token |
 | Use case | production/integration | local testing/demo |
@@ -214,6 +215,7 @@ Menjelaskan komponen sistem dan hubungan antar komponen.
 - Typesense
 - Gemini
 - WhatsApp adapter
+- APScheduler
 
 **Visual yang Disarankan**
 
@@ -251,12 +253,13 @@ Urutan flow:
 
 1. pesan masuk
 2. conversation dicari/dibuat
-3. message disimpan ke Postgres
+3. text dan path image disimpan ke Postgres bila ada
 4. memory raw disimpan ke Redis
-5. retrieval FAQ + produk dilakukan
-6. Gemini memutuskan action
-7. assistant message disimpan
-8. response dikirim ke channel
+5. Gemini lebih dulu menilai bukti pembayaran jika konteks relevan
+6. retrieval FAQ + produk dilakukan
+7. Gemini memutuskan action
+8. assistant message disimpan
+9. response dikirim ke channel
 
 **Visual yang Disarankan**
 
@@ -264,6 +267,8 @@ Urutan flow:
 
 **Poin Teknis yang Harus Disebut**
 
+- satu inbound message bisa berisi text dan image
+- payment evidence assessment memakai Gemini file input
 - FAQ dan product retrieval berjalan paralel
 - decision output berbentuk JSON terstruktur
 - event agent juga disimpan untuk audit
@@ -283,6 +288,7 @@ Menjelaskan perbedaan peran Postgres dan Redis.
 **Isi Wajib**
 
 - Postgres menyimpan transcript persisten dan state session
+- Postgres juga menyimpan path file image per message
 - Redis menyimpan working memory dan summary
 - agent membaca context aktif dari Redis
 - UI website membaca transcript dari Postgres
@@ -318,6 +324,7 @@ Menjelaskan dari mana agent mendapatkan knowledge faktual.
 - data di-index ke Typesense
 - query user di-embed dengan Gemini embeddings
 - pencarian dilakukan dengan hybrid search
+- untuk bukti pembayaran, image dinilai langsung oleh Gemini via inline file input
 
 **Visual yang Disarankan**
 
@@ -346,6 +353,7 @@ Menjelaskan bagaimana agent memutuskan kapan menjawab dan kapan handoff.
 - implementasi praktis saat ini: `reply`, `handoff`, `escalate` aktif; `close` belum di-handle
 - prompt policy utama
 - daftar kondisi wajib handoff
+- ada precheck khusus pembayaran berbasis Gemini yang menilai text + image
 
 **Kondisi Handoff yang Harus Ditampilkan**
 
@@ -360,6 +368,13 @@ Menjelaskan bagaimana agent memutuskan kapan menjawab dan kapan handoff.
 **Visual yang Disarankan**
 
 - decision tree sederhana
+
+**Poin Teknis Penting**
+
+- jangan jelaskan deteksi pembayaran sebagai pattern matching
+- jelaskan bahwa payment confirmation dan validitas bukti image dinilai Gemini
+- jika belum ada image, agent akan meminta user upload image dulu
+- jika image tidak jelas/invalid, agent akan meminta kirim ulang
 
 **Speaker Notes**
 
@@ -378,7 +393,8 @@ Menjelaskan life cycle saat agent melempar ke manusia dan apa yang terjadi jika 
 - state `handoff_pending`
 - state `human_handoff`
 - timeout `300` detik atau 5 menit
-- scheduler polling tiap `45` detik
+- APScheduler job handoff berjalan tiap `45` detik
+- APScheduler job cleanup file berjalan tiap `3 jam`
 - fallback mengembalikan conversation ke `active`
 
 **Visual yang Disarankan**
@@ -390,6 +406,7 @@ Menjelaskan life cycle saat agent melempar ke manusia dan apa yang terjadi jika 
 - scheduler memproses `handoff_pending` dan `human_handoff`
 - fallback di website mode hanya ditampilkan di UI
 - fallback di webhook mode dikirim ke WhatsApp API
+- file di folder `uploads` dan `downloads` dibersihkan otomatis tiap 3 jam
 
 **Speaker Notes**
 
@@ -410,17 +427,22 @@ Menjelaskan alat demo/testing yang sekarang sudah tersedia.
 - dummy auth token
 - transcript UI
 - badge `fallback timeout`
+- upload image sebagai bukti pembayaran
+- transcript menampilkan path file image yang tersimpan
 
 **Visual yang Disarankan**
 
 - screenshot penuh halaman simulator
 - screenshot contoh chat yang memicu handoff
 - screenshot fallback timeout badge
+- screenshot upload image proof
 
 **Yang Harus Disiapkan**
 
 - screenshot landing UI
 - screenshot satu skenario `reply`
+- screenshot satu skenario konfirmasi pembayaran tanpa image
+- screenshot satu skenario konfirmasi pembayaran dengan image
 - screenshot satu skenario `handoff`
 - screenshot fallback setelah timeout
 
@@ -442,6 +464,7 @@ Memberikan gambaran cepat tentang endpoint dan dependency yang harus ada.
 - endpoint webhook
 - endpoint website simulator
 - dependency infra: Postgres, Redis, Typesense, Gemini API key
+- dependency runtime baru: APScheduler
 
 **Visual yang Disarankan**
 
@@ -473,7 +496,7 @@ Menjelaskan gap nyata tanpa menurunkan kepercayaan stakeholder.
 - belum ada automated tests
 - migration folder belum dipakai
 - belum ada webhook signature verification
-- `jinja2` belum eksplisit di requirements
+- payment evidence assessment masih sangat bergantung pada output Gemini
 
 **Visual yang Disarankan**
 
@@ -500,8 +523,9 @@ Prioritas yang disarankan:
 3. tambahkan automated tests
 4. tambahkan webhook signature verification
 5. tambahkan Redis rehydration dari Postgres
-6. lengkapi Docker compose
-7. handle `close` action
+6. tambahkan validasi lanjutan untuk fraud/risk checks setelah Gemini assessment
+7. lengkapi Docker compose
+8. handle `close` action
 
 **Visual yang Disarankan**
 
@@ -547,6 +571,7 @@ Memberi referensi cepat untuk engineer atau reviewer.
 
 - contoh log scheduler
 - contoh log handoff timeout
+- contoh log cleanup file temporary
 - contoh log WhatsApp unauthorized jika credential belum valid
 
 ## Slide R - Demo Scenarios Appendix
@@ -555,7 +580,8 @@ Memberi referensi cepat untuk engineer atau reviewer.
 
 - FAQ answer
 - product answer
-- payment proof verification -> handoff
+- payment confirmation without image -> bot requests image
+- payment proof verification with image -> handoff
 - timeout fallback -> back to agent
 
 ---
@@ -566,12 +592,14 @@ Sebelum membuat PPT final, siapkan asset berikut:
 
 1. screenshot `/test-chat` halaman kosong
 2. screenshot `/test-chat` dengan transcript aktif
-3. screenshot status `Sent. action=handoff...`
-4. screenshot fallback timeout badge di UI
-5. snippet log scheduler timeout
-6. diagram arsitektur yang sudah dirapikan
-7. tabel env dan dependency
-8. contoh satu FAQ seed dan satu product seed
+3. screenshot upload image di simulator
+4. screenshot status `Sent. action=handoff...`
+5. screenshot fallback timeout badge di UI
+6. snippet log scheduler timeout
+7. snippet log cleanup temp files
+8. diagram arsitektur yang sudah dirapikan
+9. tabel env dan dependency
+10. contoh satu FAQ seed dan satu product seed
 
 Jika ingin deck lebih kuat secara bisnis, tambahkan:
 
@@ -591,11 +619,12 @@ Script demo yang direkomendasikan:
 2. pindah ke simulator web
 3. kirim pertanyaan FAQ umum
 4. tunjukkan agent menjawab
-5. kirim pertanyaan atau konteks yang memicu handoff
-6. tunjukkan status `handoff`
-7. jelaskan bahwa jika CS tidak merespons selama 5 menit, scheduler akan fallback
-8. refresh transcript dan tunjukkan badge `fallback timeout`
-9. kembali ke deck dan tutup dengan roadmap
+5. kirim konfirmasi pembayaran tanpa image dan tunjukkan agent meminta bukti image
+6. upload image bukti pembayaran dan kirim ulang
+7. tunjukkan status `handoff`
+8. jelaskan bahwa jika CS tidak merespons selama 5 menit, APScheduler akan fallback
+9. refresh transcript dan tunjukkan badge `fallback timeout`
+10. kembali ke deck dan tutup dengan roadmap
 
 Durasi ideal demo:
 
@@ -613,12 +642,14 @@ Supaya deck tetap akurat, jangan klaim hal-hal berikut kecuali implementasinya s
 - `webhook sudah aman dengan signature verification`
 - `deployment lokal sudah sepenuhnya one-command via docker-compose`
 - `close lifecycle sudah berjalan end-to-end`
+- `payment proof validation sudah deterministic rule-based`
 
 Kalimat yang lebih aman:
 
 - `sudah ada fondasi state, tetapi sebagian persistence stage masih perlu dilengkapi`
 - `saat ini memory operasional agent masih bergantung pada Redis`
 - `simulator web sudah memungkinkan testing end-to-end sebelum integrasi Meta selesai`
+- `validasi bukti pembayaran saat ini dibantu Gemini dengan text dan image context`
 
 ---
 

@@ -78,6 +78,7 @@ class ConversationMessage(Base):
     role: Mapped[MessageRole] = mapped_column(Enum(MessageRole, name="message_role"), index=True)
     content: Mapped[str] = mapped_column(Text)
     wa_message_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    files_: Mapped[list[str]] = mapped_column("files", JSONB, default=list)
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 

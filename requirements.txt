@@ -2,10 +2,14 @@ httpx==0.28.1
 typesense==1.1.1
 fastapi==0.115.9
 uvicorn==0.32.1
+jinja2==3.1.6
 pydantic==2.11.7
 pydantic-settings==2.9.1
+python-dotenv==1.1.0
 sqlalchemy==2.0.34
 asyncpg==0.30.0
 redis==6.2.0
 google-genai==1.48.0
 python-multipart==0.0.19
+requests==2.32.5
+apscheduler==3.11.0

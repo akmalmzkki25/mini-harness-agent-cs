@@ -73,7 +73,7 @@ Project ini adalah agent customer service untuk Mahva Clinic dengan dua mode ope
 2. `Website simulator mode`
    - channel development/testing lokal tanpa perlu Meta setup
 
-Agent menerima pesan user, mencari context dari knowledge base, membaca memory percakapan, lalu menghasilkan keputusan terstruktur berupa:
+Agent menerima pesan user, termasuk kombinasi `text` dan `image` dalam satu inbound message, mencari context dari knowledge base, membaca memory percakapan, lalu menghasilkan keputusan terstruktur berupa:
 
 - `reply`
 - `handoff`
@@ -86,7 +86,7 @@ Namun implementasi runtime saat ini hanya benar-benar memproses state operasiona
 
 ```mermaid
 flowchart TD
-    A[Inbound Message] --> B{Mode}
+    A[Inbound Message Text/Image] --> B{Mode}
     B -->|WhatsApp Webhook| C[routers/whatsapp.py]
     B -->|Website Simulator| D[routers/test_chat.py]
 
@@ -98,6 +98,7 @@ flowchart TD
     E --> H[FaqObatSearchTool]
     E --> I[DataProdukSearchTool]
     E --> J[Gemini Chat]
+    E --> Q[Gemini Payment Evidence Assessment]
 
     F --> K[(PostgreSQL)]
     G --> L[(Redis)]
@@ -106,9 +107,10 @@ flowchart TD
     H --> N[Gemini Embeddings]
     I --> N
 
-    O[AgentSchedulerService] --> F
+    O[APScheduler Jobs] --> F
     O --> G
     O --> P[WhatsAppService or Website Fallback]
+    O --> R[Uploads/Downloads Cleanup]
 ```
 
 ### 3.2 Tanggung Jawab Setiap Store
@@ -116,7 +118,7 @@ flowchart TD
 - Postgres: sumber data persisten untuk contact, conversation, message, dan event
 - Redis: memory jangka pendek agent dan summary percakapan
 - Typesense: retrieval layer untuk FAQ dan produk
-- Gemini Chat: keputusan agent dan summarization
+- Gemini Chat: keputusan agent, summarization, dan payment evidence assessment berbasis image
 - Gemini Embeddings: membuat vector query dan vector dokumen knowledge base
 
 ---
@@ -170,18 +172,20 @@ Saat aplikasi start:
 
 1. logging dikonfigurasi
 2. `create_database_schema()` dijalankan
-3. scheduler background dimulai
-4. router diregistrasi sesuai mode
+3. `APScheduler` diinisialisasi
+4. job expired handoff dijadwalkan berdasarkan `AGENT_SCHEDULER_INTERVAL_SECONDS`
+5. job cleanup folder `uploads` dan `downloads` dijadwalkan setiap 3 jam
+6. router diregistrasi sesuai mode
 
 Saat aplikasi stop:
 
-1. scheduler diberi sinyal stop
-2. aplikasi menunggu background task selesai
+1. `APScheduler` di-shutdown
+2. background jobs dihentikan secara graceful
 
 ### 5.1 Konsekuensi Desain Startup
 
 - DB schema dibentuk otomatis pada startup, bukan lewat migration pipeline.
-- Scheduler selalu aktif saat app start, bahkan dalam mode website.
+- `APScheduler` selalu aktif saat app start, bahkan dalam mode website.
 - Jika database belum siap, aplikasi gagal start.
 
 ---
@@ -193,7 +197,7 @@ Saat aplikasi stop:
 Flow untuk pesan masuk via webhook:
 
 1. Meta mengirim payload ke `POST /webhooks/whatsapp`
-2. `WhatsAppService.extract_text_messages()` mengekstrak text messages saja
+2. `WhatsAppService.extract_messages()` mengekstrak message yang didukung
 3. untuk setiap message:
    - conversation dicari/dibuat
    - `CustomerServiceAgent.handle_user_message()` dipanggil
@@ -203,7 +207,9 @@ Flow untuk pesan masuk via webhook:
 
 Perlu diperhatikan:
 
-- hanya message dengan `type=text` yang diproses
+- message `type=text` dan `type=image` didukung
+- untuk image, file didownload dari WhatsApp Cloud API ke folder `downloads`
+- file non-image akan ditolak dan user diberi instruksi untuk mengirim image
 - jika pengiriman balasan ke WhatsApp gagal, transaksi request di-rollback
 
 ## 6.2 Website Simulator Flow
@@ -213,11 +219,13 @@ Flow untuk testing via web:
 1. user membuka `GET /test-chat`
 2. user mengisi `wa_id`, `display_name`, dan token dummy
 3. user menekan tombol kirim
-4. frontend memanggil `POST /test-chat/send`
+4. frontend mengirim `multipart/form-data` ke `POST /test-chat/send`
 5. request diverifikasi dengan header `X-Dummy-Auth`
-6. `CustomerServiceAgent.handle_user_message()` dipanggil
-7. hasil response disimpan dan dikembalikan sebagai JSON
-8. frontend memanggil ulang `GET /test-chat/messages` untuk refresh transcript
+6. text dan image opsional diproses dalam satu request
+7. image disimpan ke folder `downloads`
+8. `CustomerServiceAgent.handle_user_message()` dipanggil
+9. hasil response disimpan dan dikembalikan sebagai JSON
+10. frontend memanggil ulang `GET /test-chat/messages` untuk refresh transcript
 
 Perbedaan penting dibanding webhook mode:
 
@@ -245,7 +253,21 @@ Flow:
    - kirim via WhatsApp jika mode webhook aktif
    - atau hanya simpan untuk ditampilkan di website mode
 
-### 6.4 Sequence Diagram
+## 6.4 Temporary File Cleanup Flow
+
+`APScheduler` menjalankan job cleanup setiap `3 jam` untuk:
+
+- folder `uploads`
+- folder `downloads`
+
+Perilaku:
+
+1. setiap file di dua folder tersebut discan rekursif
+2. hanya file yang dihapus
+3. kegagalan delete file dilog tanpa menghentikan cleanup file lain
+4. jumlah file yang berhasil dihapus dicatat ke log
+
+### 6.5 Sequence Diagram
 
 ```mermaid
 sequenceDiagram
@@ -260,7 +282,7 @@ sequenceDiagram
     participant RD as Redis
     participant TS as Typesense
 
-    U->>R: Send message
+    U->>R: Send message (text and/or image)
     R->>C: get_or_create_active_conversation
     C->>DB: read/write contact + conversation
     R->>A: handle_user_message
@@ -268,6 +290,7 @@ sequenceDiagram
     C->>DB: insert conversation_messages
     A->>M: add user message
     M->>RD: push memory + maybe summarize
+    A->>G: assess payment evidence with text/image when relevant
     A->>S: hybrid search FAQ + product
     S->>G: embed query
     S->>TS: search indexed knowledge
@@ -292,8 +315,10 @@ Komponen ini adalah orkestrator utama percakapan.
 Tanggung jawab:
 
 - menyimpan pesan user
+- menyimpan path file image user bila ada
 - memperbarui memory Redis
 - memanggil retrieval knowledge FAQ dan produk
+- memanggil Gemini untuk menilai bukti pembayaran berbasis text + image
 - memanggil LLM untuk keputusan agent
 - mengubah status conversation bila perlu
 - menyimpan pesan assistant
@@ -304,6 +329,11 @@ Tanggung jawab:
 - jika conversation berstatus `human_handoff`, agent tidak melakukan retrieval/decision penuh
 - agent langsung mengembalikan canned response bahwa chat dilanjutkan oleh CS
 - jika status `handoff_pending`, agent masih tetap menjalankan retrieval dan decision
+- precheck pembayaran selalu dievaluasi dengan Gemini sebelum retrieval normal
+- jika Gemini menilai ini bukan konfirmasi pembayaran, flow lanjut normal
+- jika Gemini menilai ini konfirmasi pembayaran tetapi belum ada image, agent akan meminta user upload bukti pembayaran image
+- jika image tidak valid atau tidak jelas, agent akan meminta kirim ulang image
+- jika image valid sebagai bukti pembayaran, agent akan handoff ke CS untuk verifikasi
 - knowledge retrieval FAQ dan produk dijalankan paralel via `asyncio.gather()`
 
 ### Prompt Rules yang Aktif
@@ -383,16 +413,17 @@ Jika jumlah message dalam Redis melebihi `10`:
 
 ## 7.4 `AgentSchedulerService`
 
-Service background ini menangani timeout handoff.
+Service ini menyediakan job logic yang dijalankan oleh `APScheduler`.
 
 Fungsi utama:
 
-- polling expired handoff conversations
+- memproses expired handoff conversations
 - generate fallback message
 - re-activate conversation
 - store/send fallback
+- membersihkan file temporary di `uploads` dan `downloads`
 
-Scheduler ini menggunakan:
+Job service ini menggunakan:
 
 - `AsyncSessionLocal()` sendiri
 - Redis connection sendiri
@@ -405,11 +436,13 @@ Service ini berperan sebagai adapter ke WhatsApp Cloud API.
 Fungsi utama:
 
 - `send_text()`: kirim text message ke Graph API
-- `extract_text_messages()`: ekstrak pesan teks dari payload webhook Meta
+- `extract_messages()`: ekstrak pesan `text` dan `image` dari payload webhook Meta
+- `_download_media_to_downloads()`: download media image dari WhatsApp Cloud API ke folder `downloads`
 
 ### Batasan
 
-- hanya text message yang diproses
+- hanya `text` dan `image` yang diproses
+- file non-image akan ditolak secara eksplisit
 - `WHATSAPP_APP_SECRET` belum dipakai untuk signature verification
 - jika token/phone id salah, `send_text()` akan melempar error
 
@@ -448,6 +481,7 @@ Dipakai untuk:
 
 - structured decision agent
 - structured summarization memory
+- structured payment evidence assessment menggunakan inline image input
 - optional free-text generation helper
 
 ### `gemini_embeddings.py`
@@ -462,6 +496,7 @@ Dipakai untuk:
 - batch embedding diproses per chunk
 - chunking ada, tetapi chunk saat ini masih dijalankan berurutan, bukan paralel
 - query FAQ dan product di agent sudah diparalelkan
+- payment evidence assessment memakai `types.Part.from_bytes(...)` untuk mengirim image ke Gemini
 
 ## 7.8 Typesense Adapter
 
@@ -488,6 +523,7 @@ Postgres menyimpan data persisten yang dibutuhkan untuk audit dan kelangsungan s
 - conversation
 - message
 - event
+- path file yang terkait dengan message
 
 ### Tabel `contacts`
 
@@ -537,6 +573,7 @@ Field penting:
 - `role`
 - `content`
 - `wa_message_id`
+- `files`
 - `metadata`
 - `created_at`
 
@@ -757,7 +794,7 @@ Jika token cocok, response adalah challenge string.
 
 ### `POST /webhooks/whatsapp`
 
-Body mengikuti payload webhook Meta. Hanya message teks yang diproses.
+Body mengikuti payload webhook Meta. Saat ini message `text` dan `image` didukung. Untuk image, file diunduh dari WhatsApp Cloud API dan disimpan sementara ke folder `downloads`.
 
 ### `POST /webhooks/whatsapp/cs/takeover`
 
@@ -791,7 +828,7 @@ Aktif jika `USE_WEBSITE=true`.
 |---|---|---|
 | `GET` | `/test-chat` | render halaman simulator |
 | `GET` | `/test-chat/messages` | ambil transcript conversation |
-| `POST` | `/test-chat/send` | kirim pesan user ke agent |
+| `POST` | `/test-chat/send` | kirim text dan/atau image user ke agent |
 
 ### `GET /test-chat/messages`
 
@@ -799,11 +836,12 @@ Query:
 
 - `wa_id`
 
-Response mengembalikan seluruh message conversation dalam urutan ascending. Response juga memuat flag:
+Response mengembalikan seluruh message conversation dalam urutan ascending. Response juga memuat:
 
 - `is_fallback_timeout`
+- `files`
 
-Flag ini dipakai UI untuk menandai message fallback yang dibuat scheduler.
+`is_fallback_timeout` dipakai UI untuk menandai message fallback yang dibuat scheduler. `files` berisi absolute path file image yang tersimpan untuk message tersebut.
 
 ### `POST /test-chat/send`
 
@@ -811,15 +849,12 @@ Header:
 
 - `X-Dummy-Auth`
 
-Body:
+Body berupa `multipart/form-data` dengan field:
 
-```json
-{
-  "wa_id": "6281234567890",
-  "display_name": "Website User",
-  "text": "Halo Kak, saya mau tanya produk"
-}
-```
+- `wa_id`
+- `display_name`
+- `text`
+- `image` (optional, image only)
 
 Response:
 
@@ -830,7 +865,8 @@ Response:
   "reply": "teks jawaban agent",
   "action": "reply|handoff|escalate|close",
   "stage": "stage dari output model",
-  "confidence": 0.0
+  "confidence": 0.0,
+  "files": ["absolute/path/to/image"]
 }
 ```
 
@@ -863,6 +899,8 @@ Response:
 | `WHATSAPP_APP_SECRET` | placeholder | saat ini belum dipakai runtime | belum dipakai untuk signature validation |
 | `WHATSAPP_GRAPH_API_VERSION` | `v20.0` | WhatsApp adapter | versi Graph API |
 | `WHATSAPP_GRAPH_API_BASE_URL` | `https://graph.facebook.com` | WhatsApp adapter | base URL Graph API |
+| `UPLOADS_DIR` | `uploads` | APScheduler cleanup | folder temporary uploads |
+| `DOWNLOADS_DIR` | `downloads` | webhook image download, website upload, APScheduler cleanup | folder temporary downloads |
 | `USE_WHATSAPP_WEBHOOK` | `false` | `main.py`, scheduler | aktifkan mode webhook |
 | `USE_WEBSITE` | `true` | `main.py`, router test, scheduler | aktifkan web simulator |
 | `WEBSITE_DUMMY_AUTH_TOKEN` | `dev-token` | `test_chat.py` | dummy auth web mode |
@@ -906,11 +944,7 @@ Jika memakai mode webhook real, juga butuh:
 pip install -r requirements.txt
 ```
 
-Disarankan juga memastikan package berikut tersedia jika environment benar-benar fresh:
-
-- `jinja2`
-
-karena website simulator menggunakan template rendering.
+`requirements.txt` saat ini sudah mencakup dependency penting seperti `jinja2`, `apscheduler`, `python-multipart`, dan library runtime lain yang dipakai kode.
 
 ## 13.3 Environment Setup
 
@@ -948,7 +982,8 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 - tanya FAQ umum
 - tanya produk tertentu
-- kirim pesan yang memicu handoff, misalnya verifikasi bukti pembayaran
+- kirim text konfirmasi pembayaran tanpa image untuk memastikan agent meminta bukti image
+- kirim text + image bukti pembayaran untuk memastikan agent melakukan handoff
 - diamkan sampai timeout 5 menit
 - refresh UI untuk melihat fallback timeout badge
 
@@ -974,7 +1009,10 @@ Format log saat ini:
 Log yang penting untuk operasi:
 
 - startup/shutdown aplikasi
-- scheduler tick dan jumlah expired handoff
+- APScheduler startup/shutdown
+- jumlah expired handoff
+- temporary file cleanup summary
+- payment evidence assessment
 - knowledge retrieval result count
 - Gemini request start
 - memory summarization
@@ -984,9 +1022,11 @@ Log yang penting untuk operasi:
 Contoh interpretasi log:
 
 - `Processing 0 expired handoff conversations`
-  - scheduler aktif dan tidak menemukan handoff expired
+  - job expired handoff aktif dan tidak menemukan handoff expired
 - `Applying fallback for conversation_id=...`
   - timeout handoff terjadi dan fallback sedang diproses
+- `Temporary file cleanup completed ...`
+  - job cleanup file temporary berhasil berjalan
 - `WhatsApp send failed ... 401`
   - kredensial WhatsApp Cloud API tidak valid atau belum diisi
 
@@ -1005,7 +1045,7 @@ Bagian ini penting karena mencatat gap implementasi yang nyata.
 ### 15.2 Routing and Session Behavior
 
 - `GET /test-chat/messages` bisa membuat conversation baru tanpa message
-- `wa_message_id` di website mode menggunakan format tetap `web-{wa_id}`, bukan unique id per message
+- file non-image belum didukung pada jalur upload user
 
 ### 15.3 Security
 
@@ -1022,7 +1062,8 @@ Bagian ini penting karena mencatat gap implementasi yang nyata.
 
 - action `close` tersedia di enum/schema tetapi belum diproses sebagai state transition
 - knowledge document di folder `knowledge` belum di-ingest ke sistem
-- hanya text message WhatsApp yang diproses
+- hanya `text` dan `image` yang diproses pada inbound message
+- penilaian bukti pembayaran sangat bergantung pada output Gemini; belum ada rule engine deterministic tambahan
 
 ### 15.6 Dependency Hygiene
 
@@ -1065,16 +1106,18 @@ Flow:
 
 Contoh:
 
-- user mengirim atau membicarakan bukti pembayaran
+- user mengirim text konfirmasi pembayaran, dengan atau tanpa image
 
 Flow:
 
-1. agent membaca intent dari prompt
-2. model mengembalikan `action=handoff`
-3. conversation jadi `handoff_pending`
-4. assistant message tetap disimpan
-5. jika CS takeover, status pindah ke `human_handoff`
-6. jika tidak ada respon sampai timeout, scheduler kirim fallback dan conversation kembali `active`
+1. agent menyimpan text dan path file image bila ada
+2. Gemini menilai apakah ini benar konfirmasi pembayaran
+3. jika belum ada image, agent meminta user upload bukti pembayaran dalam format image
+4. jika image tidak jelas atau tidak valid, agent meminta user kirim ulang image
+5. jika image valid sebagai bukti pembayaran, agent mengembalikan `handoff`
+6. conversation jadi `handoff_pending`
+7. jika CS takeover, status pindah ke `human_handoff`
+8. jika tidak ada respon sampai timeout, job handoff fallback mengembalikan conversation ke `active`
 
 ## 16.4 Website-Only Development Demo
 
@@ -1101,7 +1144,7 @@ Jika project ini akan dinaikkan level readiness-nya, urutan prioritas yang masuk
 3. tambahkan automated test untuk service dan router utama
 4. tambahkan signature verification untuk webhook Meta
 5. tambahkan rehydration strategy dari Postgres ke Redis jika memory hilang
-6. tambahkan dependency `jinja2` secara eksplisit
+6. tambahkan validasi lanjutan pasca-assessment Gemini untuk fraud/risk check jika diperlukan
 7. lengkapi `docker-compose` dengan Postgres, Redis, dan Typesense
 8. definisikan path nyata untuk `close` action
 
@@ -1114,8 +1157,8 @@ Secara arsitektural, project ini sudah memiliki fondasi agentic CS yang cukup je
 - session persisten di Postgres
 - working memory di Redis
 - retrieval knowledge di Typesense
-- decision dan summarization via Gemini
-- timeout recovery via scheduler
+- decision, summarization, dan payment evidence assessment via Gemini
+- timeout recovery dan temp file cleanup via APScheduler
 - dua mode channel: webhook real dan website simulator
 
 Namun current-state implementation masih paling cocok disebut sebagai `working internal agent service` yang sudah bisa didemokan end-to-end, tetapi belum sepenuhnya hardened untuk production scale karena masih ada gap pada migration, testing, security validation, dan sebagian state persistence.

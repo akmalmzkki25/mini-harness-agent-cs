@@ -1,5 +1,7 @@
 from contextlib import asynccontextmanager
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 
@@ -13,18 +15,38 @@ from routers.whatsapp import router as whatsapp_router
 
 configure_logging()
 logger = get_logger(__name__)
-scheduler = AgentSchedulerService()
+agent_scheduler_service = AgentSchedulerService()
+apscheduler = AsyncIOScheduler()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Application startup initiated")
     await create_database_schema()
-    scheduler.start()
+    apscheduler.add_job(
+        agent_scheduler_service.process_expired_handoffs,
+        trigger=IntervalTrigger(seconds=setting.AGENT_SCHEDULER_INTERVAL_SECONDS),
+        id="process_expired_handoffs",
+        replace_existing=True,
+        max_instances=1,
+    )
+    apscheduler.add_job(
+        agent_scheduler_service.cleanup_temp_files,
+        trigger=IntervalTrigger(hours=3),
+        id="cleanup_temp_files",
+        replace_existing=True,
+        max_instances=1,
+    )
+    apscheduler.start()
+    logger.info(
+        "APScheduler started with jobs: handoff_interval=%ss cleanup_interval=3h",
+        setting.AGENT_SCHEDULER_INTERVAL_SECONDS,
+    )
     logger.info("Application startup completed")
     yield
     logger.info("Application shutdown initiated")
-    await scheduler.stop()
+    apscheduler.shutdown(wait=False)
+    logger.info("APScheduler stopped")
     logger.info("Application shutdown completed")
 
 

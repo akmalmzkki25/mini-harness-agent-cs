@@ -7,8 +7,14 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.conversation import Conversation, ConversationStatus, MessageRole
-from app.modules.gemini_chat import generate_structured
-from app.schemas.agent import AgentAction, AgentDecision, AgentTurnResult, ChatMessage
+from app.modules.gemini_chat import assess_payment_evidence, generate_structured
+from app.schemas.agent import (
+    AgentAction,
+    AgentDecision,
+    AgentTurnResult,
+    ChatMessage,
+    PaymentEvidenceAssessment,
+)
 from app.services.conversation_service import ConversationService
 from app.services.memory_service import MemoryService
 from app.tools import DataProdukSearchTool, FaqObatSearchTool
@@ -31,7 +37,9 @@ class CustomerServiceAgent:
         conversation: Conversation,
         text: str,
         wa_message_id: str | None = None,
+        files: list[str] | None = None,
     ) -> AgentTurnResult:
+        files = files or []
         logger.info(
             "Handling user message conversation_id=%s status=%s",
             conversation.id,
@@ -42,6 +50,7 @@ class CustomerServiceAgent:
             role=MessageRole.USER,
             content=text,
             wa_message_id=wa_message_id,
+            files=files,
         )
         await self.memory.add_message(conversation.id, ChatMessage(role="user", content=text))
 
@@ -55,6 +64,18 @@ class CustomerServiceAgent:
                 handoff_reason="Conversation is currently assigned to human CS",
             )
             return AgentTurnResult(decision=decision)
+
+        prechecked_decision = await self._payment_proof_precheck(
+            text=text,
+            files=files,
+            conversation=conversation,
+        )
+        if prechecked_decision is not None:
+            return await self._finalize_decision(
+                conversation=conversation,
+                decision=prechecked_decision,
+                knowledge={},
+            )
 
         knowledge = await self._retrieve_knowledge(text)
         summary, recent_messages = await self.memory.get_context(conversation.id)
@@ -72,6 +93,19 @@ class CustomerServiceAgent:
             knowledge=knowledge,
         )
 
+        return await self._finalize_decision(
+            conversation=conversation,
+            decision=decision,
+            knowledge=knowledge,
+        )
+
+    async def _finalize_decision(
+        self,
+        *,
+        conversation: Conversation,
+        decision: AgentDecision,
+        knowledge: dict[str, Any],
+    ) -> AgentTurnResult:
         if decision.action in {AgentAction.HANDOFF, AgentAction.ESCALATE}:
             logger.info(
                 "Conversation %s moving to handoff action=%s reason=%s",
@@ -106,6 +140,110 @@ class CustomerServiceAgent:
             decision=decision,
             used_tools=["faq_obat.hybrid_search", "data_produk.hybrid_search"],
             knowledge_context=knowledge,
+        )
+
+    async def _payment_proof_precheck(
+        self,
+        *,
+        text: str,
+        files: list[str],
+        conversation: Conversation,
+    ) -> AgentDecision | None:
+        try:
+            assessment: PaymentEvidenceAssessment = await assess_payment_evidence(
+                user_text=text,
+                file_paths=files,
+                conversation_stage=conversation.stage,
+            )
+        except Exception:
+            logger.exception("Payment evidence assessment failed; continuing without payment precheck")
+            return None
+
+        if not assessment.is_payment_confirmation:
+            return None
+
+        if not assessment.has_image or assessment.image_relevance == "missing":
+            return AgentDecision(
+                action=AgentAction.REPLY,
+                response_text=self._build_missing_payment_proof_message(assessment),
+                stage="payment",
+                confidence=max(0.8, assessment.confidence),
+                handoff_reason=None,
+                metadata={
+                    "payment_precheck": "missing_image_proof",
+                    "assessment": assessment.model_dump(),
+                },
+            )
+
+        if assessment.image_relevance in {"invalid", "unclear"}:
+            return AgentDecision(
+                action=AgentAction.REPLY,
+                response_text=self._build_invalid_or_unclear_proof_message(assessment),
+                stage="payment",
+                confidence=max(0.75, assessment.confidence),
+                handoff_reason=None,
+                metadata={
+                    "payment_precheck": "image_not_confirmed",
+                    "assessment": assessment.model_dump(),
+                },
+            )
+
+        return AgentDecision(
+            action=AgentAction.HANDOFF,
+            response_text=self._build_received_payment_proof_message(assessment),
+            stage="handoff",
+            confidence=max(0.9, assessment.confidence),
+            handoff_reason=f"Verifikasi bukti pembayaran ({assessment.scheme})",
+            metadata={
+                "payment_precheck": "image_received",
+                "assessment": assessment.model_dump(),
+                "file_count": len(files),
+            },
+        )
+
+    @staticmethod
+    def _build_missing_payment_proof_message(assessment: PaymentEvidenceAssessment) -> str:
+        scheme_text = {
+            "pembelian_produk": "pembelian produk/obat",
+            "booking_konsultasi": "booking konsultasi dokter",
+            "umum": "transaksi Kakak",
+        }.get(assessment.scheme, "transaksi Kakak")
+        return (
+            f"Untuk konfirmasi {scheme_text}, mohon upload bukti pembayaran berupa gambar ya Kak "
+            "(jpg/jpeg/png/webp). Tanpa gambar bukti transfer, kami belum bisa lanjut verifikasi."
+        )
+
+    @staticmethod
+    def _build_invalid_or_unclear_proof_message(assessment: PaymentEvidenceAssessment) -> str:
+        scheme_text = {
+            "pembelian_produk": "pembelian produk/obat",
+            "booking_konsultasi": "booking konsultasi dokter",
+            "umum": "transaksi Kakak",
+        }.get(assessment.scheme, "transaksi Kakak")
+        return (
+            f"Terima kasih Kak, kami sudah menerima gambar untuk {scheme_text}. "
+            "Namun bukti pembayaran belum terbaca jelas/valid. Mohon kirim ulang screenshot/foto transfer "
+            "yang memuat nominal, tujuan transfer, dan waktu transaksi."
+        )
+
+    @staticmethod
+    def _build_received_payment_proof_message(assessment: PaymentEvidenceAssessment) -> str:
+        scheme_text = {
+            "pembelian_produk": "pembelian produk/obat",
+            "booking_konsultasi": "booking konsultasi dokter",
+            "umum": "transaksi Kakak",
+        }.get(assessment.scheme, "transaksi Kakak")
+        checks = assessment.checks_required or [
+            "nominal transfer",
+            "tujuan transfer",
+            "waktu transaksi",
+            "kesesuaian detail pesanan/booking",
+        ]
+        checks_text = ", ".join(checks)
+        return (
+            f"Terima kasih Kak, bukti pembayaran untuk {scheme_text} sudah kami terima. "
+            f"Tim CS akan cek kesesuaian data ({checks_text}) "
+            "sebelum diproses lebih lanjut."
         )
 
     async def _retrieve_knowledge(self, query: str) -> dict[str, Any]:

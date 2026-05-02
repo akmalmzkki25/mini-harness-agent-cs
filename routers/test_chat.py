@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,12 +23,6 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 router = APIRouter(prefix="/test-chat", tags=["test-chat"])
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / "templates"))
-
-
-class TestChatRequest(BaseModel):
-    wa_id: str = Field(min_length=5, max_length=32)
-    text: str = Field(min_length=1, max_length=3000)
-    display_name: str | None = Field(default="Website User", max_length=255)
 
 
 @router.get("", response_class=HTMLResponse)
@@ -61,6 +55,7 @@ async def get_test_chat_messages(
                 "role": message.role.value,
                 "content": message.content,
                 "created_at": message.created_at.isoformat() if message.created_at else None,
+                "files": message.files_ if isinstance(message.files_, list) else [],
                 "is_fallback_timeout": (
                     isinstance(message.metadata_, dict)
                     and message.metadata_.get("scheduler") == "handoff_timeout_fallback"
@@ -73,7 +68,10 @@ async def get_test_chat_messages(
 
 @router.post("/send")
 async def send_test_chat_message(
-    payload: TestChatRequest,
+    wa_id: str = Form(..., min_length=5, max_length=32),
+    text: str = Form("", max_length=3000),
+    display_name: str = Form("Website User", max_length=255),
+    image: UploadFile | None = File(default=None),
     x_dummy_auth: str | None = Header(default=None, alias="X-Dummy-Auth"),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict[str, Any]:
@@ -81,21 +79,36 @@ async def send_test_chat_message(
         raise HTTPException(status_code=404, detail="Website test chat is disabled")
     if x_dummy_auth != setting.WEBSITE_DUMMY_AUTH_TOKEN:
         raise HTTPException(status_code=401, detail="Invalid dummy auth token")
+    if not text.strip() and image is None:
+        raise HTTPException(status_code=422, detail="Text atau image wajib diisi")
 
     redis = get_redis_client()
     memory = MemoryService(redis)
     conversation_service = ConversationService(session)
     agent = CustomerServiceAgent(session=session, memory=memory)
+    files: list[str] = []
 
     try:
+        if image is not None:
+            mime_type = image.content_type or ""
+            if not mime_type.startswith("image/"):
+                raise HTTPException(status_code=400, detail="Saat ini hanya file image yang didukung")
+            ext = Path(image.filename or "image.bin").suffix or ".bin"
+            downloads_dir = Path(setting.DOWNLOADS_DIR)
+            downloads_dir.mkdir(parents=True, exist_ok=True)
+            file_path = downloads_dir / f"web-{uuid.uuid4().hex[:12]}{ext}"
+            file_path.write_bytes(await image.read())
+            files.append(str(file_path.resolve()))
+
         conversation = await conversation_service.get_or_create_active_conversation(
-            wa_id=payload.wa_id,
-            display_name=payload.display_name,
+            wa_id=wa_id,
+            display_name=display_name,
         )
         result = await agent.handle_user_message(
             conversation=conversation,
-            text=payload.text,
-            wa_message_id=f"web-{payload.wa_id}",
+            text=text.strip() or "User mengirim bukti gambar",
+            wa_message_id=f"web-{wa_id}-{uuid.uuid4().hex[:8]}",
+            files=files,
         )
         await session.commit()
         return {
@@ -105,10 +118,11 @@ async def send_test_chat_message(
             "action": result.decision.action.value,
             "stage": result.decision.stage,
             "confidence": result.decision.confidence,
+            "files": files,
         }
     except Exception:
         await session.rollback()
-        logger.exception("Website test chat request failed for wa_id=%s", payload.wa_id)
+        logger.exception("Website test chat request failed for wa_id=%s", wa_id)
         raise
     finally:
         await redis.aclose()

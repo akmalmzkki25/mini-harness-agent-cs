@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import asyncio
+from pathlib import Path
 
 from app.core.setting import setting
 from app.models.conversation import Conversation, ConversationStatus, MessageRole
@@ -17,34 +17,7 @@ logger = get_logger(__name__)
 
 
 class AgentSchedulerService:
-    def __init__(self) -> None:
-        self._task: asyncio.Task | None = None
-        self._stopped = asyncio.Event()
-
-    def start(self) -> None:
-        self._stopped.clear()
-        self._task = asyncio.create_task(self._run())
-        logger.info("Agent scheduler started")
-
-    async def stop(self) -> None:
-        self._stopped.set()
-        if self._task:
-            await self._task
-        logger.info("Agent scheduler stopped")
-
-    async def _run(self) -> None:
-        while not self._stopped.is_set():
-            logger.debug("Agent scheduler tick")
-            await self._process_expired_handoffs()
-            try:
-                await asyncio.wait_for(
-                    self._stopped.wait(),
-                    timeout=setting.AGENT_SCHEDULER_INTERVAL_SECONDS,
-                )
-            except asyncio.TimeoutError:
-                continue
-
-    async def _process_expired_handoffs(self) -> None:
+    async def process_expired_handoffs(self) -> None:
         async with AsyncSessionLocal() as session:
             conversation_service = ConversationService(session)
             whatsapp_service = WhatsAppService()
@@ -78,6 +51,26 @@ class AgentSchedulerService:
                     logger.info("Fallback reply sent for expired handoff conversation_id=%s", conversation.id)
             await session.commit()
             await redis.aclose()
+
+    def cleanup_temp_files(self) -> None:
+        targets = [setting.DOWNLOADS_DIR, setting.UPLOADS_DIR]
+        deleted_files = 0
+        for target in targets:
+            target_path = Path(target)
+            if not target_path.exists():
+                continue
+            for file_path in target_path.rglob("*"):
+                if file_path.is_file():
+                    try:
+                        file_path.unlink()
+                        deleted_files += 1
+                    except OSError:
+                        logger.exception("Failed to delete temp file path=%s", file_path)
+        logger.info(
+            "Temporary file cleanup completed targets=%s deleted_files=%s",
+            ",".join(targets),
+            deleted_files,
+        )
 
     async def _build_fallback_message(
         self,

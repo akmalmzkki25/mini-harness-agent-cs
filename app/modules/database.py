@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.setting import setting
@@ -34,4 +35,10 @@ async def create_database_schema() -> None:
     logger.info("Creating database schema if needed")
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+        await connection.execute(
+            text(
+                "ALTER TABLE conversation_messages "
+                "ADD COLUMN IF NOT EXISTS files JSONB DEFAULT '[]'::jsonb"
+            )
+        )
     logger.info("Database schema sync completed")

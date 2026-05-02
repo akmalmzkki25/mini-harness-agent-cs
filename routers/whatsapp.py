@@ -41,8 +41,8 @@ async def receive_webhook(
 ) -> dict[str, str]:
     payload = await request.json()
     whatsapp = WhatsAppService()
-    messages = whatsapp.extract_text_messages(payload)
-    logger.info("Received WhatsApp webhook payload with %s text messages", len(messages))
+    messages = await whatsapp.extract_messages(payload)
+    logger.info("Received WhatsApp webhook payload with %s supported messages", len(messages))
     conversation_service = ConversationService(session)
     redis = get_redis_client()
     memory = MemoryService(redis)
@@ -55,10 +55,31 @@ async def receive_webhook(
                 wa_id=message.wa_id,
                 display_name=message.display_name,
             )
+            if not message.is_supported:
+                await conversation_service.save_message(
+                    conversation_id=conversation.id,
+                    role=MessageRole.USER,
+                    content=message.text,
+                    wa_message_id=message.message_id,
+                    metadata={"message_type": message.message_type, "supported": False},
+                )
+                unsupported_text = (
+                    "Untuk saat ini kami belum mendukung file selain gambar ya Kak. "
+                    "Silakan kirim bukti pembayaran dalam format image (jpg/jpeg/png/webp)."
+                )
+                await conversation_service.save_message(
+                    conversation_id=conversation.id,
+                    role=MessageRole.ASSISTANT,
+                    content=unsupported_text,
+                    metadata={"system_rule": "image_only_upload"},
+                )
+                await whatsapp.send_text(to=message.wa_id, text=unsupported_text)
+                continue
             result = await agent.handle_user_message(
                 conversation=conversation,
                 text=message.text,
                 wa_message_id=message.message_id,
+                files=message.files,
             )
             await whatsapp.send_text(to=message.wa_id, text=result.decision.response_text)
 

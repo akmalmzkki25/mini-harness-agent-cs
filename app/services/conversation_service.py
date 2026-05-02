@@ -59,6 +59,7 @@ class ConversationService:
         role: MessageRole,
         content: str,
         wa_message_id: str | None = None,
+        files: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> ConversationMessage:
         message = ConversationMessage(
@@ -66,6 +67,7 @@ class ConversationService:
             role=role,
             content=content,
             wa_message_id=wa_message_id,
+            files_=files or [],
             metadata_=metadata or {},
         )
         self.session.add(message)

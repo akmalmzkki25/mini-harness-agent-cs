@@ -59,6 +59,10 @@
         <label>Message</label>
         <textarea id="message" placeholder="Tulis pesan customer di sini..."></textarea>
       </div>
+      <div class="field" style="margin-top: 10px;">
+        <label>Upload Bukti (image only)</label>
+        <input id="image" type="file" accept="image/png,image/jpeg,image/webp" />
+      </div>
       <div style="display: flex; gap: 10px; margin-top: 10px;">
         <button id="refreshBtn" type="button">Refresh Chat</button>
         <button id="sendBtn" type="button">Kirim ke Agent</button>
@@ -74,6 +78,7 @@
     const displayNameEl = document.getElementById("display_name");
     const tokenEl = document.getElementById("token");
     const messageEl = document.getElementById("message");
+    const imageEl = document.getElementById("image");
     const sendBtn = document.getElementById("sendBtn");
     const refreshBtn = document.getElementById("refreshBtn");
 
@@ -101,6 +106,7 @@
           <div class="msg ${cls}">
             <div class="meta">${esc(msg.role)}${fallbackBadge} - ${esc(msg.created_at || "-")}</div>
             <div>${esc(msg.content)}</div>
+            ${(msg.files || []).length ? `<div class="meta">files: ${esc((msg.files || []).join(", "))}</div>` : ""}
           </div>
         `;
       }
@@ -113,20 +119,26 @@
       const display_name = displayNameEl.value.trim();
       const text = messageEl.value.trim();
       const token = tokenEl.value.trim();
-      if (!wa_id || !text || !token) {
-        setStatus("WA ID, token, dan message wajib diisi.");
+      const imageFile = imageEl.files && imageEl.files[0] ? imageEl.files[0] : null;
+      if (!wa_id || !token || (!text && !imageFile)) {
+        setStatus("WA ID, token, dan minimal message atau image wajib diisi.");
         return;
       }
       setStatus("Sending...");
       sendBtn.disabled = true;
       try {
+        const formData = new FormData();
+        formData.append("wa_id", wa_id);
+        formData.append("display_name", display_name);
+        formData.append("text", text);
+        if (imageFile) formData.append("image", imageFile);
+
         const res = await fetch("/test-chat/send", {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
             "X-Dummy-Auth": token
           },
-          body: JSON.stringify({ wa_id, display_name, text })
+          body: formData
         });
         const data = await res.json();
         if (!res.ok) {
@@ -134,6 +146,7 @@
           return;
         }
         messageEl.value = "";
+        imageEl.value = "";
         await loadMessages();
         setStatus(`Sent. action=${data.action}, stage=${data.stage}, confidence=${data.confidence}`);
       } catch (err) {

@@ -24,6 +24,8 @@ class Setting(BaseSettings):
     WHATSAPP_APP_SECRET: str = "YOUR_WHATSAPP_APP_SECRET_HERE"
     WHATSAPP_GRAPH_API_VERSION: str = "v20.0"
     WHATSAPP_GRAPH_API_BASE_URL: str = "https://graph.facebook.com"
+    UPLOADS_DIR: str = "uploads"
+    DOWNLOADS_DIR: str = "downloads"
     USE_WHATSAPP_WEBHOOK: bool = False
     USE_WEBSITE: bool = True
     WEBSITE_DUMMY_AUTH_TOKEN: str = "dev-token"
