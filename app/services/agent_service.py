@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -109,8 +110,10 @@ class CustomerServiceAgent:
 
     async def _retrieve_knowledge(self, query: str) -> dict[str, Any]:
         logger.debug("Retrieving knowledge for query=%s", query)
-        faq_result = await self.faq_tool.hybrid_search(query, per_page=3)
-        product_result = await self.product_tool.hybrid_search(query, per_page=3)
+        faq_result, product_result = await asyncio.gather(
+            self.faq_tool.hybrid_search(query, per_page=3),
+            self.product_tool.hybrid_search(query, per_page=3),
+        )
         knowledge = {
             "faq_obat": self._compact_hits(faq_result),
             "data_produk": self._compact_hits(product_result),
@@ -139,7 +142,7 @@ class CustomerServiceAgent:
             knowledge=knowledge,
         )
         try:
-            result = await generate_structured(prompt, AgentDecision)
+            result: AgentDecision = await generate_structured(prompt, AgentDecision)
             logger.info(
                 "Agent decision generated action=%s stage=%s confidence=%.2f",
                 result.action.value,

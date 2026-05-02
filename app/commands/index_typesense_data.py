@@ -108,10 +108,14 @@ async def import_documents(collection_name: str, documents: list[dict[str, Any]]
 
 async def index_all_typesense_data() -> dict[str, list[dict[str, Any]]]:
     logger.info("Starting full Typesense data indexing")
-    faq_documents = await build_faq_documents()
-    product_documents = await build_product_documents()
-    faq_result = await import_documents(FAQ_COLLECTION, faq_documents)
-    product_result = await import_documents(PRODUCT_COLLECTION, product_documents)
+    faq_documents, product_documents = await asyncio.gather(
+        build_faq_documents(),
+        build_product_documents(),
+    )
+    faq_result, product_result = await asyncio.gather(
+        import_documents(FAQ_COLLECTION, faq_documents),
+        import_documents(PRODUCT_COLLECTION, product_documents),
+    )
     result = {
         FAQ_COLLECTION: faq_result,
         PRODUCT_COLLECTION: product_result,

@@ -77,8 +77,10 @@ async def recreate_collection(schema: dict[str, Any]) -> None:
 async def init_typesense_collections() -> None:
     config = get_typesense_config()
     logger.info("Initializing Typesense collections with vector_dim=%s", config["vector_dim"])
-    await recreate_collection(build_faq_schema(config["vector_dim"]))
-    await recreate_collection(build_product_schema(config["vector_dim"]))
+    await asyncio.gather(
+        recreate_collection(build_faq_schema(config["vector_dim"])),
+        recreate_collection(build_product_schema(config["vector_dim"])),
+    )
 
 
 if __name__ == "__main__":
