@@ -14,6 +14,8 @@ class Setting(BaseSettings):
     GEMINI_EMBEDDING_BATCH_SIZE: int = 10
     GEMINI_API_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta"
     GEMINI_API_KEY: str = ""
+    
+    KIE_API_KEY: str = ""
 
     WHATSAPP_ACCESS_TOKEN: str = "YOUR_WHATSAPP_ACCESS_TOKEN_HERE"
     WHATSAPP_PHONE_NUMBER_ID: str = "YOUR_WHATSAPP_PHONE_NUMBER_ID_HERE"
